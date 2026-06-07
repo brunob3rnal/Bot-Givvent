@@ -255,8 +255,11 @@ async function iniciar() {
   })
 
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    console.log('📨 Evento recibido, tipo:', type)
     if (type !== 'notify') return
     const msg = messages[0]
+    console.log('📨 fromMe:', msg.key.fromMe, '| from:', msg.key.remoteJid, '| tiene mensaje:', !!msg.message)
+    if (!msg.message || msg.key.fromMe) return
     if (!msg.message || msg.key.fromMe) return
     const from = msg.key.remoteJid
     if (from === 'status@broadcast') return
