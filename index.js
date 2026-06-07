@@ -1,10 +1,12 @@
-require('dotenv').config()
-const { default: makeWASocket, DisconnectReason, useMultiFileAuthState } = require('@whiskeysockets/baileys')
-const Groq = require('groq-sdk')
-const axios = require('axios')
-const http = require('http')
-const pino = require('pino')
-const QRCode = require('qrcode')
+import dotenv from 'dotenv'
+dotenv.config()
+
+import makeWASocket, { DisconnectReason, useMultiFileAuthState } from '@whiskeysockets/baileys'
+import Groq from 'groq-sdk'
+import axios from 'axios'
+import http from 'http'
+import pino from 'pino'
+import QRCode from 'qrcode'
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY })
 const OWNER = process.env.OWNER_NUMBER + '@s.whatsapp.net'
@@ -12,9 +14,6 @@ const OWNER = process.env.OWNER_NUMBER + '@s.whatsapp.net'
 let qrImageUrl = null
 let botConectado = false
 
-// ============================================================
-// CATÁLOGO DE PRODUCTOS
-// ============================================================
 const CATALOGO = `
 === ALMACÉN 19 (+10 CUP encima del toque) ===
 - Cerveza Coprove: 0.49 USD (cajas x24 u)
@@ -161,9 +160,6 @@ Aceite motor (compra +1000 USD):
   - Pomo 20L semisintético: 70 USD
 `
 
-// ============================================================
-// TASA USD
-// ============================================================
 let tasaUSD = parseInt(process.env.TASA_MANUAL) || 385
 
 async function getTasa() {
@@ -185,9 +181,6 @@ async function getTasa() {
   }
 }
 
-// ============================================================
-// GROQ
-// ============================================================
 const historiales = {}
 
 async function responder(mensaje, historial) {
@@ -225,9 +218,6 @@ INSTRUCCIONES:
   return resp.choices[0].message.content
 }
 
-// ============================================================
-// WHATSAPP
-// ============================================================
 async function iniciar() {
   const { state, saveCreds } = await useMultiFileAuthState('auth')
 
@@ -306,21 +296,18 @@ async function iniciar() {
   })
 }
 
-// ============================================================
-// SERVIDOR HTTP — muestra el QR en el navegador
-// ============================================================
 http.createServer((req, res) => {
-  res.setHeader('Content-Type', 'text/html')
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
   if (botConectado) {
     res.end('<html><body style="display:flex;align-items:center;justify-content:center;height:100vh;background:#111;margin:0"><h2 style="color:#4caf50;font-family:sans-serif">✅ Bot conectado y activo</h2></body></html>')
   } else if (qrImageUrl) {
-    res.end(`<html><body style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#111;margin:0;font-family:sans-serif;color:#fff">
+    res.end(`<html><head><meta charset="utf-8"></head><body style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#111;margin:0;font-family:sans-serif;color:#fff">
       <h2>📱 Escanea con WhatsApp Business</h2>
       <img src="${qrImageUrl}" style="width:280px;height:280px;border-radius:12px"/>
       <p style="color:#aaa;margin-top:16px">Recarga esta página si el QR expiró</p>
     </body></html>`)
   } else {
-    res.end('<html><body style="display:flex;align-items:center;justify-content:center;height:100vh;background:#111;margin:0"><h2 style="color:#fff;font-family:sans-serif">⏳ Generando QR... recarga en 5 segundos</h2></body></html>')
+    res.end('<html><head><meta charset="utf-8"></head><body style="display:flex;align-items:center;justify-content:center;height:100vh;background:#111;margin:0"><h2 style="color:#fff;font-family:sans-serif">⏳ Generando QR... recarga en 5 segundos</h2></body></html>')
   }
 }).listen(3000, () => {
   console.log('🌐 Servidor HTTP en puerto 3000')
