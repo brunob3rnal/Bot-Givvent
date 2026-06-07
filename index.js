@@ -2,12 +2,12 @@ import dotenv from 'dotenv'
 dotenv.config()
 
 import pkg from '@whiskeysockets/baileys'
-const { default: makeWASocket, DisconnectReason, useMultiFileAuthState } = pkgimport Groq from 'groq-sdk'
 import axios from 'axios'
 import http from 'http'
 import pino from 'pino'
 import QRCode from 'qrcode'
 
+const { default: makeWASocket, DisconnectReason, useMultiFileAuthState } = pkgimport Groq from 'groq-sdk'
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY })
 const OWNER = process.env.OWNER_NUMBER + '@s.whatsapp.net'
 
