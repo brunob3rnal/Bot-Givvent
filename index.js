@@ -1,8 +1,8 @@
 import dotenv from 'dotenv'
 dotenv.config()
 
-import makeWASocket, { DisconnectReason, useMultiFileAuthState } from '@whiskeysockets/baileys'
-import Groq from 'groq-sdk'
+import pkg from '@whiskeysockets/baileys'
+const { default: makeWASocket, DisconnectReason, useMultiFileAuthState } = pkgimport Groq from 'groq-sdk'
 import axios from 'axios'
 import http from 'http'
 import pino from 'pino'
