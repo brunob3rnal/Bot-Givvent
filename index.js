@@ -4,18 +4,18 @@ const Groq = require('groq-sdk')
 const axios = require('axios')
 const http = require('http')
 const pino = require('pino')
+const QRCode = require('qrcode')
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY })
 const OWNER = process.env.OWNER_NUMBER + '@s.whatsapp.net'
-const QRCode = require('qrcode')
 
 let qrImageUrl = null
 let botConectado = false
 
 // ============================================================
-// CATÁLOGO DE PRODUCTOS (actualiza aquí cuando cambien precios)
+// CATÁLOGO DE PRODUCTOS
 // ============================================================
-const CATALOGO = \`
+const CATALOGO = `
 === ALMACÉN 19 (+10 CUP encima del toque) ===
 - Cerveza Coprove: 0.49 USD (cajas x24 u)
 - Jugo de lata Sunchy: 0.54 USD mínimo 1 caja (cajas x24 u) sabores: Banana, Tamarindo, Guayaba, Pera, Mango
@@ -32,10 +32,10 @@ Arroz saco 50kg:
   - Por saco: 47 USD efectivo | por contenedor: 45 USD efectivo
   - Transferencia: 52 USD equivalente
 Aceite Semilla: 2.10 USD x contenedor | 2.15 USD x unidad/caja
-Frijoles negros saco 50kg: 58 USD (efectivo y transferencia)
+Frijoles negros saco 50kg: 58 USD
 Leche condensada: 519 CUP (0.90 USD) por lata
 
-=== ALMACÉN 20 (tiene mensajería: 56237509) ===
+=== ALMACÉN 20 (mensajería: 56237509) ===
 - Galletas María 90g: 190 CUP (cajas x24 u)
 - Souffle 30g: 116.67 CUP (cajas x24 u)
 - Wafer RULIX 45g: 125 CUP (cajas x24 u)
@@ -54,7 +54,7 @@ Leche condensada: 519 CUP (0.90 USD) por lata
 - Leche Evaporada caja x24: 15100 CUP (650 CUP/lata)
 - Mayonesa Nezka 494ml caja x12: 10500 CUP (875 CUP/u)
 - Masa de cerdo deshuesada: 1150 CUP/lb o 2.00 USD/lb
-- Café Nezka 250g caja x20: 32800 CUP (1640 CUP/u) [5.1] / 31900 CUP (1595 CUP/u) [5.2]
+- Café Nezka 250g caja x20: 32800 CUP [almacén 5.1] / 31900 CUP [almacén 5.2]
 - Chupa Chupa caja x16pqts x24u: 15360 CUP (960 CUP/pqt, 40 CUP/u)
 - Huevo caja x12: 31200 CUP (2600 CUP/u)
 - Batería Bluetti 2304 Wh: 1500 USD
@@ -62,7 +62,7 @@ Leche condensada: 519 CUP (0.90 USD) por lata
 - Batería Bluetti 1024 Wh: 770 USD
 
 === ALMACÉN 6 (+15 encima del toque) ===
-- Papitas Pan Pan 35g: 0.46 USD (sabores: tomate, BBQ, queso, picante) — disponible sábado
+- Papitas Pan Pan 35g: 0.46 USD (sabores: tomate, BBQ, queso, picante) disponible sábado
 - Arroz brasileño 1kg: 1.06 USD (pacas x30 u)
 - Galleta María 90g: 0.32 USD (+1 caja) | 0.30 USD (+100 cajas)
 - Wafer MARDAN 30g: 0.14 USD (+1 caja) | 0.13 USD (+20 cajas)
@@ -73,13 +73,13 @@ Leche condensada: 519 CUP (0.90 USD) por lata
 - Pasta tomate 850g: 1.12 USD (+1 caja) | 1.10 USD (+50 cajas)
 - Leche en polvo 200g: 1.48 USD (x48 u)
 Confituras (disponibles martes):
-  - Peter Jimmy 40g Chocolate: 0.25 USD/u (cajas x144)
-  - Peter Jimmy 20g: 0.13 USD/u (cajas x144)
-  - Bombones 500g: 3.50 USD/bolsa (cajas x16 bolsas)
+  - Peter Jimmy 40g Chocolate: 0.25 USD/u
+  - Peter Jimmy 20g: 0.13 USD/u
+  - Bombones 500g: 3.50 USD/bolsa
   - Bombones 250g: 1.75 USD/bolsa
   - Jimmy Cornet 25g: 0.26 USD/u
   - Peter Crash 40g: 0.23 USD/u
-  - Peter Orient 80g (almendras/chocolate/avellanas/leche): 0.47 USD/u
+  - Peter Orient 80g: 0.47 USD/u
   - Nutella y Palitos 52g: 0.53 USD/u
   - Peter Maxtat 30g: 0.175 USD/u
   - Caramelos 170g: 1.00 USD/bolsa | Caramelos 90g: 0.60 USD/bolsa
@@ -131,58 +131,54 @@ Ron Santiago (caja x12 botellas):
   - Ron Orange: 5.45 USD
 
 === ALMACÉN 21 ===
-- Zumo de limón: 250 CUP (blíster x15 u = 3750 CUP)
-- Miel 400ml: 430 CUP (x24 = 10320 CUP)
+- Zumo de limón: 250 CUP (blíster x15 u)
+- Miel 400ml: 430 CUP
 - Detergente Silver Bright 500g: 420 CUP (paca x20)
 - Detergente Silver Bright 900g: 630 CUP (paca x15)
-- Mayonesa Saude: 760 CUP (x12 = 9120 CUP)
-- Espaguetis 500g: 240 CUP (x20 = 4800 CUP)
-- Compotas BabyFruit (durazno, frutas mixtas): 290 CUP (x24 = 6960 CUP)
-- Galletas Romo: 140 CUP (x24 = 3360 CUP)
-- Galletas Browni (chocolate, naranja, vainilla): 133 CUP (x24 = 3192 CUP)
-- Pasta tomate 850g: 740 CUP (x12 = 8880 CUP)
-- Galletas Hola (chocolate, vainilla): 160 CUP (x24 = 3840 CUP)
-- Leche Condensada Holland Park: 509 CUP (x24 = 12216 CUP)
-- Frijol negro 1kg paca x30: 755 CUP (paca = 22650 CUP)
+- Mayonesa Saude: 760 CUP (x12)
+- Espaguetis 500g: 240 CUP (x20)
+- Compotas BabyFruit (durazno, frutas mixtas): 290 CUP (x24)
+- Galletas Romo: 140 CUP (x24)
+- Galletas Browni (chocolate, naranja, vainilla): 133 CUP (x24)
+- Pasta tomate 850g: 740 CUP (x12)
+- Galletas Hola (chocolate, vainilla): 160 CUP (x24)
+- Leche Condensada Holland Park: 509 CUP (x24)
+- Frijol negro 1kg paca x30: 755 CUP/u
 - Saco arroz 50kg: 29620 CUP
-- Mayonesa Celorrio: 1630 CUP (x12 = 19560 CUP)
-- Mayonesa HollandPark: 860 CUP (x12 = 10320 CUP)
-- Vinagre Claro: 280 CUP (x15 = 4200 CUP)
-- Vino Seco: 280 CUP (x15 = 4200 CUP)
-- Leche Evaporada Nezka: 685 CUP (x24 = 16440 CUP)
-- Gelatina 35g (fresa, uva, piña, naranja): 235 CUP (x48 = 11280 CUP)
-- Cerveza Eichbaum: 248 CUP (caja x24 = 5952 CUP)
-- Atún 140g: 425 CUP (x48 = 20400 CUP)
-- Jamonilla cerdo y pollo: 760 CUP (x24 = 18240 CUP)
-- Palomitas: 320 CUP (x32 = 10240 CUP)
+- Mayonesa Celorrio: 1630 CUP (x12)
+- Mayonesa HollandPark: 860 CUP (x12)
+- Leche Evaporada Nezka: 685 CUP (x24)
+- Gelatina 35g (fresa, uva, piña, naranja): 235 CUP (x48)
+- Cerveza Eichbaum: 248 CUP (caja x24)
+- Atún 140g: 425 CUP (x48)
+- Jamonilla cerdo y pollo: 760 CUP (x24)
+- Palomitas: 320 CUP (x32)
 Aceite motor (compra +1000 USD):
   - 20w50 5lt semisintético: 20 USD
   - 15w40 5lt semisintético: 20 USD
   - 10w40 5lt sintético: 20 USD
   - 5w30 5lt sintético: 22 USD
-  - Pomo 20L 20w50 semisintético: 70 USD
-\`
+  - Pomo 20L semisintético: 70 USD
+`
 
 // ============================================================
 // TASA USD
-// Si tienes token de elToque se actualiza automático cada 30 min
-// Si no, usa TASA_MANUAL del .env — cámbiala tú cuando cambie el toque
 // ============================================================
 let tasaUSD = parseInt(process.env.TASA_MANUAL) || 385
 
 async function getTasa() {
   if (!process.env.ELTOQUE_TOKEN) {
     tasaUSD = parseInt(process.env.TASA_MANUAL) || tasaUSD
-    console.log(\`💱 Tasa manual: \${tasaUSD} CUP/USD (sin token elToque)\`)
+    console.log(`💱 Tasa manual: ${tasaUSD} CUP/USD`)
     return
   }
   try {
     const { data } = await axios.get('https://tasas.eltoque.com/v1/trmi', {
-      headers: { 'Authorization': \`Bearer \${process.env.ELTOQUE_TOKEN}\` }
+      headers: { 'Authorization': `Bearer ${process.env.ELTOQUE_TOKEN}` }
     })
     if (data && data.USD) {
       tasaUSD = data.USD
-      console.log(\`💱 Tasa elToque: \${tasaUSD} CUP/USD\`)
+      console.log(`💱 Tasa elToque: ${tasaUSD} CUP/USD`)
     }
   } catch(e) {
     console.log('⚠️  Error tasa elToque, usando manual:', tasaUSD)
@@ -190,29 +186,31 @@ async function getTasa() {
 }
 
 // ============================================================
-// GROQ — cerebro del bot
+// GROQ
 // ============================================================
-async function responder(mensaje, historial) {
-  const sistema = \`Eres el asistente de ventas de un almacén mayorista en Cuba. Atiendes por WhatsApp.
+const historiales = {}
 
-💱 Tasa USD hoy: \${tasaUSD} CUP (fuente: elToque - mercado informal)
+async function responder(mensaje, historial) {
+  const sistema = `Eres el asistente de ventas de un almacén mayorista en Cuba. Atiendes por WhatsApp.
+
+💱 Tasa USD hoy: ${tasaUSD} CUP (fuente: elToque - mercado informal)
 
 Recargos por almacén sobre el toque:
 - Almacén 19: toque + 10 CUP por USD
-- Almacén 18: toque + 15 CUP por USD  
+- Almacén 18: toque + 15 CUP por USD
 - Almacén 6: toque + 15 CUP por USD
 - Almacén 22: toque + 20 CUP por USD
 
 CATÁLOGO:
-\${CATALOGO}
+${CATALOGO}
 
 INSTRUCCIONES:
 1. Responde preguntas de precios y disponibilidad buscando en el catálogo
 2. Cuando des precios en USD también di el equivalente en CUP con la tasa del día
-3. Para cerrar un pedido necesitas recoger: nombre del cliente, qué producto y cuánto, forma de pago (efectivo USD, efectivo CUP o transferencia), dirección de entrega
-4. Si no encuentras el producto o no puedes responder algo, escribe exactamente la palabra: ESCALAR
+3. Para cerrar un pedido necesitas: nombre del cliente, producto y cantidad, forma de pago (efectivo USD, efectivo CUP o transferencia), dirección
+4. Si no encuentras el producto o no puedes responder algo, escribe exactamente: ESCALAR
 5. Sé amable, responde corto y usa pocos emojis
-6. Habla natural como en Cuba, tutéalo al cliente\`
+6. Habla natural como en Cuba, tutéalo al cliente`
 
   const resp = await groq.chat.completions.create({
     model: 'llama-3.3-70b-versatile',
@@ -230,18 +228,16 @@ INSTRUCCIONES:
 // ============================================================
 // WHATSAPP
 // ============================================================
-const historiales = {}
-
 async function iniciar() {
   const { state, saveCreds } = await useMultiFileAuthState('auth')
-  
+
   const sock = makeWASocket({
     auth: state,
     logger: pino({ level: 'silent' })
   })
-  
+
   sock.ev.on('creds.update', saveCreds)
-  
+
   sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
     if (qr) {
       qrImageUrl = await QRCode.toDataURL(qr)
@@ -255,6 +251,82 @@ async function iniciar() {
     }
     if (connection === 'close') {
       botConectado = false
+      const reconectar = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut
+      if (reconectar) {
+        console.log('🔄 Reconectando...')
+        iniciar()
+      } else {
+        console.log('❌ Sesión cerrada. Abre la URL de Render para escanear el QR.')
+      }
+    }
+  })
+
+  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    if (type !== 'notify') return
+    const msg = messages[0]
+    if (!msg.message || msg.key.fromMe) return
+    const from = msg.key.remoteJid
+    if (from === 'status@broadcast') return
+
+    const texto = msg.message.conversation ||
+                  msg.message.extendedTextMessage?.text || ''
+    if (!texto.trim()) return
+
+    if (!historiales[from]) historiales[from] = []
+
+    try {
+      await sock.sendPresenceUpdate('composing', from)
+      const respuesta = await responder(texto, historiales[from])
+
+      historiales[from].push({ role: 'user', content: texto })
+      historiales[from].push({ role: 'assistant', content: respuesta })
+
+      if (historiales[from].length > 20) {
+        historiales[from] = historiales[from].slice(-20)
+      }
+
+      if (respuesta.includes('ESCALAR')) {
+        await sock.sendMessage(OWNER, {
+          text: `🚨 *Cliente necesita atención*\nNúmero: ${from}\nPreguntó: "${texto}"`
+        })
+        await sock.sendMessage(from, {
+          text: 'Esa pregunta la responde el dueño directamente, te contacta enseguida 👍'
+        })
+      } else {
+        await sock.sendMessage(from, { text: respuesta })
+      }
+    } catch(e) {
+      console.error('Error:', e.message)
+      await sock.sendMessage(from, {
+        text: 'Hubo un problema, intenta de nuevo en un momento 🙏'
+      })
+    }
+  })
+}
+
+// ============================================================
+// SERVIDOR HTTP — muestra el QR en el navegador
+// ============================================================
+http.createServer((req, res) => {
+  res.setHeader('Content-Type', 'text/html')
+  if (botConectado) {
+    res.end('<html><body style="display:flex;align-items:center;justify-content:center;height:100vh;background:#111;margin:0"><h2 style="color:#4caf50;font-family:sans-serif">✅ Bot conectado y activo</h2></body></html>')
+  } else if (qrImageUrl) {
+    res.end(`<html><body style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#111;margin:0;font-family:sans-serif;color:#fff">
+      <h2>📱 Escanea con WhatsApp Business</h2>
+      <img src="${qrImageUrl}" style="width:280px;height:280px;border-radius:12px"/>
+      <p style="color:#aaa;margin-top:16px">Recarga esta página si el QR expiró</p>
+    </body></html>`)
+  } else {
+    res.end('<html><body style="display:flex;align-items:center;justify-content:center;height:100vh;background:#111;margin:0"><h2 style="color:#fff;font-family:sans-serif">⏳ Generando QR... recarga en 5 segundos</h2></body></html>')
+  }
+}).listen(3000, () => {
+  console.log('🌐 Servidor HTTP en puerto 3000')
+})
+
+getTasa()
+setInterval(getTasa, 30 * 60 * 1000)
+iniciar()
       const reconectar = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut
       if (reconectar) {
         console.log('🔄 Reconectando...')
