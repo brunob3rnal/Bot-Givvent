@@ -264,8 +264,16 @@ async function iniciar() {
     const from = msg.key.remoteJid
     if (from === 'status@broadcast') return
 
-    const texto = msg.message.conversation ||
-                  msg.message.extendedTextMessage?.text || ''
+    console.log('🔍 Tipo de mensaje:', JSON.stringify(Object.keys(msg.message)))
+
+    const texto = msg.message.conversation || 
+              msg.message.extendedTextMessage?.text ||
+              msg.message.imageMessage?.caption ||
+              msg.message.ephemeralMessage?.message?.extendedTextMessage?.text ||
+              msg.message.viewOnceMessage?.message?.extendedTextMessage?.text ||
+              "
+
+    console.log('📝 Texto extraído:', texto)
     if (!texto.trim()) return
 
     if (!historiales[from]) historiales[from] = []
