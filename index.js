@@ -1,14 +1,36 @@
-import dotenv from 'dotenv' dotenv.config()
+import dotenv from 'dotenv';
+dotenv.config();
 
-import pkg from '@whiskeysockets/baileys' import axios from 'axios' import http from 'http' import pino from 'pino' import QRCode from 'qrcode' import Groq from 'groq-sdk'
+import pkg from '@whiskeysockets/baileys';
+import axios from 'axios';
+import http from 'http';
+import pino from 'pino';
+import QRCode from 'qrcode';
+import Groq from 'groq-sdk';
 
-const { default: makeWASocket, DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion, } = pkg
+const {
+  default: makeWASocket,
+  DisconnectReason,
+  useMultiFileAuthState,
+  fetchLatestBaileysVersion,
+} = pkg;
 
-const PORT = Number(process.env.PORT || 3000) const OWNER = process.env.OWNER_NUMBER ? ${process.env.OWNER_NUMBER}@s.whatsapp.net : null const BOT_NAME = process.env.BOT_NAME || 'Bot-Givvent' const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile' const GROC_TIMEOUT_MS = Number(process.env.GROQ_TIMEOUT_MS || 30000) const REPLY_TIMEOUT_MS = Number(process.env.REPLY_TIMEOUT_MS || 45000) const ENABLE_SELF_TEST = String(process.env.BOT_SELF_TEST || '0') === '1'
+const PORT = Number(process.env.PORT || 3000);
+const OWNER = process.env.OWNER_NUMBER ? `${process.env.OWNER_NUMBER}@s.whatsapp.net` : null;
+const BOT_NAME = process.env.BOT_NAME || 'Bot-Givvent';
+const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+const GROC_TIMEOUT_MS = Number(process.env.GROQ_TIMEOUT_MS || 30000);
+const REPLY_TIMEOUT_MS = Number(process.env.REPLY_TIMEOUT_MS || 45000);
+const ENABLE_SELF_TEST = String(process.env.BOT_SELF_TEST || '0') === '1';
 
-const groqApiKey = process.env.GROQ_API_KEY || '' const groq = new Groq({ apiKey: groqApiKey })
+const groqApiKey = process.env.GROQ_API_KEY || '';
+const groq = new Groq({ apiKey: groqApiKey });
 
-let qrImageUrl = null let botConectado = false let isRestarting = false let tasaUSD = parseInt(process.env.TASA_MANUAL || '385', 10) || 385 let sockGlobal = null
+let qrImageUrl = null;
+let botConectado = false;
+let isRestarting = false;
+let tasaUSD = parseInt(process.env.TASA_MANUAL || '385', 10) || 385;
+let sockGlobal = null;
 
 const CATALOGO = ` === ALMACÉN 19 (+10 CUP encima del toque) ===
 
@@ -274,48 +296,116 @@ Aceite motor (compra +1000 USD):
 
 5w30 5lt sintético: 22 USD
 
-Pomo 20L semisintético: 70 USD `
+Pomo 20L semisintético: 70 USD `;
 
+const historiales = Object.create(null);
 
-
-const historiales = Object.create(null)
-
-function logStartup() { console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━') console.log(🚀 Iniciando ${BOT_NAME}) console.log(🧩 Node env: ${process.env.NODE_ENV || 'no definido'}) console.log(🌐 Puerto: ${PORT}) console.log(🤖 Modelo Groq: ${GROQ_MODEL}) console.log(💱 Tasa manual inicial: ${tasaUSD} CUP/USD) console.log(👤 OWNER: ${OWNER || 'NO DEFINIDO'}) console.log(🔑 GROQ_API_KEY: ${groqApiKey ? 'OK' : 'NO DEFINIDA'}) console.log(🧪 Self-test: ${ENABLE_SELF_TEST ? 'ACTIVADO' : 'DESACTIVADO'}) console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━') }
-
-function warnIfMissingEnv() { const missing = [] if (!groqApiKey) missing.push('GROQ_API_KEY') if (!OWNER) missing.push('OWNER_NUMBER') if (!process.env.TASA_MANUAL && !process.env.ELTOQUE_TOKEN) missing.push('TASA_MANUAL o ELTOQUE_TOKEN')
-
-if (missing.length) { console.log('⚠️  Variables faltantes:', missing.join(', ')) } }
-
-function safePreview(text, limit = 120) { const clean = String(text || '') .replace(/\s+/g, ' ') .trim() return clean.length > limit ? ${clean.slice(0, limit)}… : clean }
-
-function formatError(e) { if (!e) return 'Error desconocido' if (e instanceof Error) return ${e.name}: ${e.message} try { return JSON.stringify(e) } catch { return String(e) } }
-
-function extractText(message) { if (!message) return ''
-
-return ( message.conversation || message.extendedTextMessage?.text || message.imageMessage?.caption || message.videoMessage?.caption || message.documentMessage?.caption || message.buttonsResponseMessage?.selectedButtonId || message.listResponseMessage?.singleSelectReply?.selectedRowId || message.templateButtonReplyMessage?.selectedId || message.ephemeralMessage?.message?.conversation || message.ephemeralMessage?.message?.extendedTextMessage?.text || message.viewOnceMessage?.message?.conversation || message.viewOnceMessage?.message?.extendedTextMessage?.text || message.viewOnceMessageV2?.message?.conversation || message.viewOnceMessageV2?.message?.extendedTextMessage?.text || '' ) }
-
-function getMessageType(message) { if (!message) return 'sin mensaje' return Object.keys(message).join(',') }
-
-async function getTasa() { if (!process.env.ELTOQUE_TOKEN) { tasaUSD = parseInt(process.env.TASA_MANUAL || ${tasaUSD}, 10) || tasaUSD console.log(💱 Tasa manual: ${tasaUSD} CUP/USD) return tasaUSD }
-
-try { console.log('💱 Consultando tasa en elToque...') const { data } = await axios.get('https://tasas.eltoque.com/v1/trmi', { headers: { Authorization: Bearer ${process.env.ELTOQUE_TOKEN} }, timeout: 15000, })
-
-if (data && data.USD) {
-  tasaUSD = Number(data.USD)
-  console.log(`💱 Tasa elToque: ${tasaUSD} CUP/USD`)
-} else {
-  console.log('⚠️  elToque respondió sin USD, sigo con:', tasaUSD)
+function logStartup() {
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log(`🚀 Iniciando ${BOT_NAME}`);
+  console.log(`🧩 Node env: ${process.env.NODE_ENV || 'no definido'}`);
+  console.log(`🌐 Puerto: ${PORT}`);
+  console.log(`🤖 Modelo Groq: ${GROQ_MODEL}`);
+  console.log(`💱 Tasa manual inicial: ${tasaUSD} CUP/USD`);
+  console.log(`👤 OWNER: ${OWNER || 'NO DEFINIDO'}`);
+  console.log(`🔑 GROQ_API_KEY: ${groqApiKey ? 'OK' : 'NO DEFINIDA'}`);
+  console.log(`🧪 Self-test: ${ENABLE_SELF_TEST ? 'ACTIVADO' : 'DESACTIVADO'}`);
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 }
 
-} catch (e) { console.log('⚠️  Error consultando elToque, usando manual:', formatError(e)) }
+function warnIfMissingEnv() {
+  const missing = [];
+  if (!groqApiKey) missing.push('GROQ_API_KEY');
+  if (!OWNER) missing.push('OWNER_NUMBER');
+  if (!process.env.TASA_MANUAL && !process.env.ELTOQUE_TOKEN) missing.push('TASA_MANUAL o ELTOQUE_TOKEN');
 
-return tasaUSD }
+  if (missing.length) {
+    console.log('⚠️  Variables faltantes:', missing.join(', '));
+  }
+}
 
-function withTimeout(promise, ms, label = 'operación') { let timer const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(Timeout en ${label} (${ms} ms))), ms) })
+function safePreview(text, limit = 120) {
+  const clean = String(text || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return clean.length > limit ? `${clean.slice(0, limit)}…` : clean;
+}
 
-return Promise.race([promise, timeout]).finally(() => clearTimeout(timer)) }
+function formatError(e) {
+  if (!e) return 'Error desconocido';
+  if (e instanceof Error) return `${e.name}: ${e.message}`;
+  try {
+    return JSON.stringify(e);
+  } catch {
+    return String(e);
+  }
+}
 
-async function responder(mensaje, historial) { const sistema = `Eres el asistente de ventas de un almacén mayorista en Cuba. Atiendes por WhatsApp.
+function extractText(message) {
+  if (!message) return '';
+
+  return (
+    message.conversation ||
+    message.extendedTextMessage?.text ||
+    message.imageMessage?.caption ||
+    message.videoMessage?.caption ||
+    message.documentMessage?.caption ||
+    message.buttonsResponseMessage?.selectedButtonId ||
+    message.listResponseMessage?.singleSelectReply?.selectedRowId ||
+    message.templateButtonReplyMessage?.selectedId ||
+    message.ephemeralMessage?.message?.conversation ||
+    message.ephemeralMessage?.message?.extendedTextMessage?.text ||
+    message.viewOnceMessage?.message?.conversation ||
+    message.viewOnceMessage?.message?.extendedTextMessage?.text ||
+    message.viewOnceMessageV2?.message?.conversation ||
+    message.viewOnceMessageV2?.message?.extendedTextMessage?.text ||
+    ''
+  );
+}
+
+function getMessageType(message) {
+  if (!message) return 'sin mensaje';
+  return Object.keys(message).join(',');
+}
+
+async function getTasa() {
+  if (!process.env.ELTOQUE_TOKEN) {
+    tasaUSD = parseInt(process.env.TASA_MANUAL || String(tasaUSD), 10) || tasaUSD;
+    console.log(`💱 Tasa manual: ${tasaUSD} CUP/USD`);
+    return tasaUSD;
+  }
+
+  try {
+    console.log('💱 Consultando tasa en elToque...');
+    const { data } = await axios.get('https://tasas.eltoque.com/v1/trmi', {
+      headers: { Authorization: `Bearer ${process.env.ELTOQUE_TOKEN}` },
+      timeout: 15000,
+    });
+
+    if (data && data.USD) {
+      tasaUSD = Number(data.USD);
+      console.log(`💱 Tasa elToque: ${tasaUSD} CUP/USD`);
+    } else {
+      console.log('⚠️  elToque respondió sin USD, sigo con:', tasaUSD);
+    }
+  } catch (e) {
+    console.log('⚠️  Error consultando elToque, usando manual:', formatError(e));
+  }
+
+  return tasaUSD;
+}
+
+function withTimeout(promise, ms, label = 'operación') {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Timeout en ${label} (${ms} ms)`)), ms);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+async function responder(mensaje, historial) {
+  const sistema = `Eres el asistente de ventas de un almacén mayorista en Cuba. Atiendes por WhatsApp.
 
 💱 Tasa USD hoy: ${tasaUSD} CUP (fuente: elToque - mercado informal)
 
@@ -349,164 +439,236 @@ INSTRUCCIONES:
 5. Sé amable, responde corto y usa pocos emojis.
 
 
-6. Habla natural como en Cuba, tutéalo al cliente.`
+6. Habla natural como en Cuba, tutéalo al cliente.`;
 
+  console.log('🤖 Llamando a Groq...');
+  const resp = await withTimeout(
+    groq.chat.completions.create({
+      model: GROQ_MODEL,
+      messages: [
+        { role: 'system', content: sistema },
+        ...historial,
+        { role: 'user', content: mensaje },
+      ],
+      max_tokens: 600,
+      temperature: 0.5,
+    }),
+    GROC_TIMEOUT_MS,
+    'Groq'
+  );
 
-
-console.log('🤖 Llamando a Groq...') const resp = await withTimeout( groq.chat.completions.create({ model: GROQ_MODEL, messages: [ { role: 'system', content: sistema }, ...historial, { role: 'user', content: mensaje }, ], max_tokens: 600, temperature: 0.5, }), GROC_TIMEOUT_MS, 'Groq' )
-
-const content = resp?.choices?.[0]?.message?.content?.trim() if (!content) { throw new Error('Groq respondió vacío') }
-
-return content }
-
-async function sendText(sock, jid, text) { console.log(📤 Enviando mensaje a ${jid}: ${safePreview(text)}) await withTimeout( sock.sendMessage(jid, { text }), REPLY_TIMEOUT_MS, 'sendMessage' ) console.log('✅ Mensaje enviado') }
-
-async function processIncomingMessage(sock, msg) { const from = msg?.key?.remoteJid const fromMe = !!msg?.key?.fromMe const message = msg?.message
-
-console.log('📨 fromMe:', fromMe, '| from:', from || 'sin jid', '| tiene mensaje:', !!message)
-
-if (!message || fromMe) return if (!from || from === 'status@broadcast') return
-
-console.log('🔍 Tipo de mensaje:', getMessageType(message))
-
-const texto = extractText(message) console.log('📝 Texto extraído:', safePreview(texto, 200)) if (!texto.trim()) return
-
-if (!historiales[from]) historiales[from] = []
-
-try { console.log('🚀 Entrando al flujo de respuesta para:', from) await sock.sendPresenceUpdate('composing', from)
-
-// Prueba rápida de aislamiento: si activas BOT_DRY_RUN=1, responde sin IA.
-const dryRun = String(process.env.BOT_DRY_RUN || '0') === '1'
-const respuesta = dryRun ? 'Prueba funcionando.' : await responder(texto, historiales[from])
-
-console.log('🤖 Respuesta generada:', safePreview(respuesta, 240))
-
-historiales[from].push({ role: 'user', content: texto })
-historiales[from].push({ role: 'assistant', content: respuesta })
-
-if (historiales[from].length > 20) {
-  historiales[from] = historiales[from].slice(-20)
-}
-
-if (/^ESCALAR$/i.test(respuesta.trim())) {
-  if (OWNER) {
-    await sendText(sock, OWNER, `🚨 *Cliente necesita atención*\nNúmero: ${from}\nPreguntó: "${texto}"`)
-  } else {
-    console.log('⚠️  OWNER no definido, no se pudo avisar al dueño')
+  const content = resp?.choices?.[0]?.message?.content?.trim();
+  if (!content) {
+    throw new Error('Groq respondió vacío');
   }
 
-  await sendText(sock, from, 'Esa pregunta la responde el dueño directamente, te contacta enseguida 👍')
-  return
+  return content;
 }
 
-await sendText(sock, from, respuesta)
-
-} catch (e) { console.error('❌ Error en el flujo del mensaje:') console.error(e)
-
-try {
-  await sendText(sock, from, 'Hubo un problema, intenta de nuevo en un momento 🙏')
-} catch (sendError) {
-  console.error('❌ No se pudo enviar mensaje de error al cliente:')
-  console.error(sendError)
+async function sendText(sock, jid, text) {
+  console.log(`📤 Enviando mensaje a ${jid}: ${safePreview(text)}`);
+  await withTimeout(sock.sendMessage(jid, { text }), REPLY_TIMEOUT_MS, 'sendMessage');
+  console.log('✅ Mensaje enviado');
 }
 
-} }
+async function processIncomingMessage(sock, msg) {
+  const from = msg?.key?.remoteJid;
+  const fromMe = !!msg?.key?.fromMe;
+  const message = msg?.message;
 
-async function iniciar() { if (isRestarting) { console.log('🔄 Ya hay un reinicio en curso, salto esta llamada') return }
+  console.log('📨 fromMe:', fromMe, '| from:', from || 'sin jid', '| tiene mensaje:', !!message);
 
-isRestarting = true try { console.log('🔐 Cargando estado de autenticación...') const { state, saveCreds } = await useMultiFileAuthState('auth') const version = await fetchLatestBaileysVersion().catch(() => null)
+  if (!message || fromMe) return;
+  if (!from || from === 'status@broadcast') return;
 
-const sock = makeWASocket({
-  auth: state,
-  logger: pino({ level: 'silent' }),
-  version: version?.version,
-  printQRInTerminal: false,
-})
+  console.log('🔍 Tipo de mensaje:', getMessageType(message));
 
-sockGlobal = sock
+  const texto = extractText(message);
+  console.log('📝 Texto extraído:', safePreview(texto, 200));
+  if (!texto.trim()) return;
 
-sock.ev.on('creds.update', saveCreds)
+  if (!historiales[from]) historiales[from] = [];
 
-sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
-  if (qr) {
-    try {
-      qrImageUrl = await QRCode.toDataURL(qr)
-      botConectado = false
-      console.log('📱 QR generado — abre tu URL de Render para escanearlo')
-    } catch (e) {
-      console.error('❌ No se pudo generar el QR:')
-      console.error(e)
+  try {
+    console.log('🚀 Entrando al flujo de respuesta para:', from);
+    await sock.sendPresenceUpdate('composing', from);
+
+    // Prueba rápida de aislamiento: si activas BOT_DRY_RUN=1, responde sin IA.
+    const dryRun = String(process.env.BOT_DRY_RUN || '0') === '1';
+    const respuesta = dryRun ? 'Prueba funcionando.' : await responder(texto, historiales[from]);
+
+    console.log('🤖 Respuesta generada:', safePreview(respuesta, 240));
+
+    historiales[from].push({ role: 'user', content: texto });
+    historiales[from].push({ role: 'assistant', content: respuesta });
+
+    if (historiales[from].length > 20) {
+      historiales[from] = historiales[from].slice(-20);
     }
-  }
 
-  if (connection === 'open') {
-    botConectado = true
-    qrImageUrl = null
-    console.log('✅ WhatsApp conectado!')
-
-    if (ENABLE_SELF_TEST) {
-      console.log('🧪 Self-test activo: probando respuesta local sin enviar mensaje')
-      try {
-        const prueba = await responder('tienen arroz?', [])
-        console.log('🧪 Self-test Groq OK:', safePreview(prueba, 200))
-      } catch (e) {
-        console.error('🧪 Self-test falló:')
-        console.error(e)
+    if (/^ESCALAR$/i.test(respuesta.trim())) {
+      if (OWNER) {
+        await sendText(sock, OWNER, `🚨 *Cliente necesita atención*\nNúmero: ${from}\nPreguntó: "${texto}"`);
+      } else {
+        console.log('⚠️  OWNER no definido, no se pudo avisar al dueño');
       }
-    }
-  }
 
-  if (connection === 'close') {
-    botConectado = false
-    const codigo = lastDisconnect?.error?.output?.statusCode
-    const errorTexto = lastDisconnect?.error?.message || formatError(lastDisconnect?.error)
-    console.log('❌ Desconectado. Código:', codigo, '| Error:', errorTexto)
-
-    const reconectar = codigo !== DisconnectReason.loggedOut
-    if (reconectar) {
-      console.log('🔄 Reconectando...')
-      isRestarting = false
-      setTimeout(() => {
-        iniciar().catch(err => {
-          console.error('❌ Falló el reinicio:')
-          console.error(err)
-        })
-      }, 1500)
-      return
+      await sendText(sock, from, 'Esa pregunta la responde el dueño directamente, te contacta enseguida 👍');
+      return;
     }
 
-    console.log('❌ Sesión cerrada.')
+    await sendText(sock, from, respuesta);
+  } catch (e) {
+    console.error('❌ Error en el flujo del mensaje:');
+    console.error(e);
+
+    try {
+      await sendText(sock, from, 'Hubo un problema, intenta de nuevo en un momento 🙏');
+    } catch (sendError) {
+      console.error('❌ No se pudo enviar mensaje de error al cliente:');
+      console.error(sendError);
+    }
   }
-})
+}
 
-sock.ev.on('messages.upsert', async ({ messages, type }) => {
-  console.log('📨 Evento recibido, tipo:', type)
-  if (type !== 'notify') return
-  const msg = messages?.[0]
-  if (!msg) {
-    console.log('⚠️  Evento notify sin mensaje')
-    return
+async function iniciar() {
+  if (isRestarting) {
+    console.log('🔄 Ya hay un reinicio en curso, salto esta llamada');
+    return;
   }
-  await processIncomingMessage(sock, msg)
-})
 
-console.log('✅ Escuchando eventos de WhatsApp')
+  isRestarting = true;
+  try {
+    console.log('🔐 Cargando estado de autenticación...');
+    const { state, saveCreds } = await useMultiFileAuthState('auth');
+    const version = await fetchLatestBaileysVersion().catch(() => null);
 
-} catch (e) { console.error('❌ Error iniciando el bot:') console.error(e) } finally { isRestarting = false } }
+    const sock = makeWASocket({
+      auth: state,
+      logger: pino({ level: 'silent' }),
+      version: version?.version,
+      printQRInTerminal: false,
+    });
 
-function renderPage() { if (botConectado) { return '<html><body style="display:flex;align-items:center;justify-content:center;height:100vh;background:#111;margin:0"><h2 style="color:#4caf50;font-family:sans-serif">✅ Bot conectado y activo</h2></body></html>' }
+    sockGlobal = sock;
 
-if (qrImageUrl) { return <html><head><meta charset="utf-8"></head><body style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#111;margin:0;font-family:sans-serif;color:#fff"> <h2>📱 Escanea con WhatsApp Business</h2> <img src="${qrImageUrl}" style="width:280px;height:280px;border-radius:12px"/> <p style="color:#aaa;margin-top:16px">Recarga esta página si el QR expiró</p> </body></html> }
+    sock.ev.on('creds.update', saveCreds);
 
-return '<html><head><meta charset="utf-8"></head><body style="display:flex;align-items:center;justify-content:center;height:100vh;background:#111;margin:0"><h2 style="color:#fff;font-family:sans-serif">⏳ Generando QR... recarga en 5 segundos</h2></body></html>' }
+    sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
+      if (qr) {
+        try {
+          qrImageUrl = await QRCode.toDataURL(qr);
+          botConectado = false;
+          console.log('📱 QR generado — abre tu URL de Render para escanearlo');
+        } catch (e) {
+          console.error('❌ No se pudo generar el QR:');
+          console.error(e);
+        }
+      }
 
-http .createServer((req, res) => { if (req.url === '/health') { res.setHeader('Content-Type', 'application/json; charset=utf-8') res.end(JSON.stringify({ ok: true, botConectado, hasQr: !!qrImageUrl, ownerConfigured: !!OWNER, groqConfigured: !!groqApiKey, tasaUSD, })) return }
+      if (connection === 'open') {
+        botConectado = true;
+        qrImageUrl = null;
+        console.log('✅ WhatsApp conectado!');
 
-res.setHeader('Content-Type', 'text/html; charset=utf-8')
-res.end(renderPage())
+        if (ENABLE_SELF_TEST) {
+          console.log('🧪 Self-test activo: probando respuesta local sin enviar mensaje');
+          try {
+            const prueba = await responder('tienen arroz?', []);
+            console.log('🧪 Self-test Groq OK:', safePreview(prueba, 200));
+          } catch (e) {
+            console.error('🧪 Self-test falló:');
+            console.error(e);
+          }
+        }
+      }
 
-}) .listen(PORT, () => { logStartup() warnIfMissingEnv() console.log(🌐 Servidor HTTP en puerto ${PORT}) getTasa() setInterval(getTasa, 30 * 60 * 1000) iniciar() })
+      if (connection === 'close') {
+        botConectado = false;
+        const codigo = lastDisconnect?.error?.output?.statusCode;
+        const errorTexto = lastDisconnect?.error?.message || formatError(lastDisconnect?.error);
+        console.log('❌ Desconectado. Código:', codigo, '| Error:', errorTexto);
 
-process.on('unhandledRejection', err => { console.error('❌ unhandledRejection:') console.error(err) })
+        const reconectar = codigo !== DisconnectReason.loggedOut;
+        if (reconectar) {
+          console.log('🔄 Reconectando...');
+          isRestarting = false;
+          setTimeout(() => {
+            iniciar().catch(err => {
+              console.error('❌ Falló el reinicio:');
+              console.error(err);
+            });
+          }, 1500);
+          return;
+        }
 
-process.on('uncaughtException', err => { console.error('❌ uncaughtException:') console.error(err) })
+        console.log('❌ Sesión cerrada.');
+      }
+    });
+
+    sock.ev.on('messages.upsert', async ({ messages, type }) => {
+      console.log('📨 Evento recibido, tipo:', type);
+      if (type !== 'notify') return;
+      const msg = messages?.[0];
+      if (!msg) {
+        console.log('⚠️  Evento notify sin mensaje');
+        return;
+      }
+      await processIncomingMessage(sock, msg);
+    });
+
+    console.log('✅ Escuchando eventos de WhatsApp');
+  } catch (e) {
+    console.error('❌ Error iniciando el bot:');
+    console.error(e);
+  } finally {
+    isRestarting = false;
+  }
+}
+
+function renderPage() {
+  if (botConectado) {
+    return '<html><body style="display:flex;align-items:center;justify-content:center;height:100vh;background:#111;margin:0"><h2 style="color:#4caf50;font-family:sans-serif">✅ Bot conectado y activo</h2></body></html>';
+  }
+
+  if (qrImageUrl) {
+    return `<html><head><meta charset="utf-8"></head><body style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#111;margin:0;font-family:sans-serif;color:#fff"> <h2>📱 Escanea con WhatsApp Business</h2> <img src="${qrImageUrl}" style="width:280px;height:280px;border-radius:12px"/> <p style="color:#aaa;margin-top:16px">Recarga esta página si el QR expiró</p> </body></html>`;
+  }
+
+  return '<html><head><meta charset="utf-8"></head><body style="display:flex;align-items:center;justify-content:center;height:100vh;background:#111;margin:0"><h2 style="color:#fff;font-family:sans-serif">⏳ Generando QR... recarga en 5 segundos</h2></body></html>';
+}
+
+http.createServer((req, res) => {
+  if (req.url === '/health') {
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.end(JSON.stringify({
+      ok: true,
+      botConectado,
+      hasQr: !!qrImageUrl,
+      ownerConfigured: !!OWNER,
+      groqConfigured: !!groqApiKey,
+      tasaUSD,
+    }));
+    return;
+  }
+
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.end(renderPage());
+}).listen(PORT, () => {
+  logStartup();
+  warnIfMissingEnv();
+  console.log(`🌐 Servidor HTTP en puerto ${PORT}`);
+  getTasa();
+  setInterval(getTasa, 30 * 60 * 1000);
+  iniciar();
+});
+
+process.on('unhandledRejection', err => {
+  console.error('❌ unhandledRejection:');
+  console.error(err);
+});
+
+process.on('uncaughtException', err => {
+  console.error('❌ uncaughtException:');
+  console.error(err);
+});
