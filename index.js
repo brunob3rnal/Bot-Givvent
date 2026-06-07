@@ -251,12 +251,14 @@ async function iniciar() {
     }
     if (connection === 'close') {
       botConectado = false
-      const reconectar = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut
+      const codigo = lastDisconnect?.error?.output?.statusCode
+      console.log('❌ Desconectado. Código:', codigo, '| Error:', lastDisconnect?.error?.message)
+      const reconectar = codigo !== DisconnectReason.loggedOut
       if (reconectar) {
         console.log('🔄 Reconectando...')
         iniciar()
       } else {
-        console.log('❌ Sesión cerrada. Abre la URL de Render para escanear el QR.')
+        console.log('❌ Sesión cerrada.')
       }
     }
   })
