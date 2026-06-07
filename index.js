@@ -271,7 +271,7 @@ async function iniciar() {
               msg.message.imageMessage?.caption ||
               msg.message.ephemeralMessage?.message?.extendedTextMessage?.text ||
               msg.message.viewOnceMessage?.message?.extendedTextMessage?.text ||
-
+              ''
     console.log('📝 Texto extraído:', texto)
     if (!texto.trim()) return
 
