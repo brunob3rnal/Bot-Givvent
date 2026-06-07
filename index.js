@@ -6,8 +6,9 @@ import axios from 'axios'
 import http from 'http'
 import pino from 'pino'
 import QRCode from 'qrcode'
+import Groq from 'groq-sdk'
 
-const { default: makeWASocket, DisconnectReason, useMultiFileAuthState } = pkgimport Groq from 'groq-sdk'
+const { default: makeWASocket, DisconnectReason, useMultiFileAuthState } = pkg 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY })
 const OWNER = process.env.OWNER_NUMBER + '@s.whatsapp.net'
 
